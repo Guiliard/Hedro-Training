@@ -1,3 +1,4 @@
 device_simulator/node_modules
 device_simulator/dist
 rmq-bridge/target
+rmq-consumer/target

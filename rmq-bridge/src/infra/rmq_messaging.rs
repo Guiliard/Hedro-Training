@@ -4,7 +4,7 @@ use lapin::{ BasicProperties, Channel, Connection, ConnectionProperties };
 use log::{ error, info };
 use std::env; 
 
-struct RabbbitMQConfigs {
+struct RabbitMQConfigs {
 
     host: String,
     port: String,
@@ -12,38 +12,31 @@ struct RabbbitMQConfigs {
     password: String,
 }
 
+pub struct RabbitMQConnection {}
+
 pub struct RabbitMQMessaging {
 
-    conn: Option <Connection>,
-    channel: Option <Channel>,
+    conn: Connection,
+    channel: Channel,
 }
 
 impl RabbitMQMessaging {
 
-    pub fn new() -> Self {
-        RabbitMQMessaging { conn: None, channel: None, }
+    pub fn new(conn: Connection, channel: Channel) -> Self {
+        RabbitMQMessaging { conn, channel }
     }
 }
 
 #[async_trait]
 impl Messaging for RabbitMQMessaging {
 
-    async fn publish (&self, destination: String, data: &[u8]) -> Result <(), ()>{
-        if self.channel.is_none() {
-            error!("Connection wasn´t establish yet....");
-            return Err(());
-        }
+    async fn publish (&self, destination: String, data: &[u8]) -> Result <(), ()> {
 
         match self.channel
-            .clone()
-            .unwrap()
             .basic_publish(
                 &destination,
                 "",
-                lapin::options::BasicPublishOptions {
-                    mandatory: false,
-                    immediate: false,
-                },
+                lapin::options::BasicPublishOptions::default(),
                 data,
                 BasicProperties::default(),
             )
@@ -61,9 +54,11 @@ impl Messaging for RabbitMQMessaging {
     }
 }
 
-impl RabbitMQMessaging {
+impl RabbitMQConnection {
 
-    fn envs(&self) -> Result <RabbbitMQConfigs, ()> {
+    pub fn new() -> Self { return  RabbitMQConnection {};}
+
+    fn envs(&self) -> Result <RabbitMQConfigs, ()> {
 
         let Ok(host) = env::var("RABBITMQ_HOST") else {
             error!("Failed to read RABBIT_HOST env....");
@@ -85,7 +80,7 @@ impl RabbitMQMessaging {
             return Err(());
         };
 
-        Ok(RabbbitMQConfigs {
+        Ok(RabbitMQConfigs {
             host,
             port, 
             user,
@@ -118,8 +113,6 @@ impl RabbitMQMessaging {
         };
 
         info!("RabbitMq channel created!");
-        self.conn = Some(conn);
-        self.channel = Some(channel);
 
         Ok(())
     }
