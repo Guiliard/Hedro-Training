@@ -1,5 +1,9 @@
 version: '3'
 
+networks:
+  my_conection:
+    driver: bridge
+
 services:
 
   emqx:
@@ -20,29 +24,10 @@ services:
       - EMQX_LOADED_PLUGINS=emqx_recon,emqx_retainer,emqx_management,emqx_auth_username
 
     ports:
-      - 1883:1883
+      - 1883:1883 
       - 8883:8883
       - 8083:8083
-      - 18083:18083
-
-  device_simulator:
-
-    image: device_simulator
-
-    container_name: device_simulator
-
-    networks:
-      - my_conection
-
-    environment:
-      - MQTT_HOST=emqx:1883
-      - MQTT_PROTOCOL=tcp
-      - MQTT_USER=admin
-      - MQTT_PASSWORD=admin
-      - TIME_TEMP=1000
-      - TIME_HUMIDITY=1000 
-      - LOG_LEVEL=debug
-
+      - 18083:18083 # porta da dashbaord web -> localhost:1808
 
   rabbitmq:
 
@@ -62,6 +47,45 @@ services:
       - 5672:5672 # porta do broker
       - 15692:15692
 
-networks:
-  my_conection:
-    driver: bridge
+  device_simulator:
+
+    image: device_simulator
+
+    container_name: device_simulator
+
+    networks:
+      - my_conection
+
+    environment:
+      - MQTT_HOST=emqx:1883
+      - MQTT_PROTOCOL=tcp
+      - MQTT_USER=admin
+      - MQTT_PASSWORD=admin
+      - TIME_TEMP=1000
+      - TIME_HUMIDITY=1000 
+      - LOG_LEVEL=debug
+
+  # rmq-bridge:
+
+  #   image: rmq-bridge
+
+  #   container_name: rmq-bridge
+
+  #   networks:
+  #     - my_conection
+
+  #   environment:
+  #     - RUST_LOG=debug
+  #     - MQTT_HOST=emqx:1883
+  #     - MQTT_PROTOCOL=tcp
+  #     - MQTT_PORT=1883
+  #     - MQTT_CLIENT_ID=my-client-id@1234
+  #     - MQTT_USER=admin
+  #     - MQTT_PASSWORD=admin
+
+  #     - RABBITMQ_HOST=rabbitmq:5672
+  #     - RABBITMQ_PORT=5672
+  #     - RABBITMQ_USER=guest
+  #     - RABBITMQ_PASSWORD=guest
+  #     - RABBITMQ_QUEUE=Dataset
+  #     - RABBITMQ_EXCHANGE=Hedro_Test

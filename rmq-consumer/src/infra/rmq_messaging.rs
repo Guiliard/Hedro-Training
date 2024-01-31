@@ -1,71 +1,32 @@
-use crate::services::service::Messaging;
-use async_trait::async_trait;
-use std::env; 
+use crate::services::message::RMQMessage;
+use futures_util::StreamExt;
+use lapin::message::Delivery;
 use lapin::{
-    options::{ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions},
+    options:: *,
     types::FieldTable,
-    BasicProperties, Channel, Connection, ConnectionProperties,
+    Channel, Connection, ConnectionProperties,
 };
-
+use std::env;
 use log::{ error, info };
 
-struct RabbitMQConfigs {
 
+struct RMQConfigs {
     host: String,
     port: String,
     user: String,
     password: String,
-    exchange_name: String,
     queue_name: String,
+    exchange_name: String,
+    consumer_name: String,
 }
 
-pub struct RabbitMQConnection {}
+pub struct RMQConnection {}
 
-pub struct RabbitMQMessaging {
+impl RMQConnection {
 
-    _conn: Connection,
-    channel: Channel,
-}
+    pub fn new() -> Self { return RMQConnection{}; }
 
-impl RabbitMQMessaging {
-
-    pub fn new(conn: Connection, channel: Channel) -> Self {
-        RabbitMQMessaging { _conn: conn, channel }
-    }
-}
-
-#[async_trait]
-impl Messaging for RabbitMQMessaging {
-
-    async fn publish (&self, destination: String, data: &[u8]) -> Result <(), ()> {
-
-        match self.channel
-            .basic_publish(
-                &destination,
-                "",
-                lapin::options::BasicPublishOptions::default(),
-                data,
-                BasicProperties::default(),
-            )
-            .await 
-            {
-                Ok(_) => {
-                    info!("Published to rmq!");
-                    Ok(())
-                }
-                Err(_) => {
-                    error!("Failed to publish msg to rmq....");
-                    Err(())
-                }
-            }
-    }
-}
-
-impl RabbitMQConnection {
-
-    pub fn new() -> Self { return  RabbitMQConnection {};}
-
-    fn envs(&self) -> Result <RabbitMQConfigs, ()> {
+    fn envs(&self) -> Result <RMQConfigs, ()> {
 
         let Ok(host) = env::var("RABBITMQ_HOST") else {
             error!("Failed to read RABBIT_HOST env....");
@@ -97,13 +58,19 @@ impl RabbitMQConnection {
             return Err(());
         };
 
-        Ok(RabbitMQConfigs {
+        let Ok(consumer_name) = env::var("RABBITMQ_QUEUE_CONSUMER") else {
+            error!("Failed to read RABBITMQ_QUEUE env....");
+            return Err(());
+        };
+
+        Ok(RMQConfigs {
             host,
             port, 
             user,
             password,
             exchange_name,
             queue_name,
+            consumer_name,
         })
     }
 
@@ -176,8 +143,54 @@ impl RabbitMQConnection {
             return Err(());
         };
 
-        info!("Rabbitmq queue bind created!");
+        let mut consumer = channel
+            .basic_consume(
+                &envs.queue_name,
+                &envs.consumer_name,
+                BasicConsumeOptions::default(),
+                FieldTable::default(),
+            )
+            .await
+            .expect("Failure to creat the consumer....");
+
+        while let Some(consumer_product) = consumer.next().await {
+
+            let consumer_product = match consumer_product {
+
+                Ok(consumer_product) => consumer_product,
+                Err(err) => { error!("Error in consumer: {:?}....", err); continue; }
+            };
+            
+            let consumer_tag = consumer_product.delivery_tag;
+
+            self.handler(Ok(consumer_product)).await;
+
+            if let Err(err) = channel
+                .basic_ack(consumer_tag, BasicAckOptions::default())
+                .await
+                {
+                    error!("Failed to acknowledge message: {:?}....", err);
+                } 
+                else { info!("Message acknowledgment successful!"); }
+        }
 
         Ok((conn, channel))
+    }
+
+    async fn handler(&self, consumer_product: Result< Delivery, lapin::Error >) {
+        
+        let data = match consumer_product {
+            Ok(data) => data,
+            Err(_) => { error!("Error receiving message from RabbitMQ...."); return; }
+        };
+
+        let msg = data.data;
+
+        let deserialized_msg: Result<RMQMessage, _> = serde_json::from_slice(&*msg);
+
+        match deserialized_msg {
+            Ok(deserialized_msg) => { info!("Received message successfully: {:?}!", deserialized_msg); }
+            Err(err) => { error!("Failed to deserialize message: {:?}....", err); }
+        }
     }
 }

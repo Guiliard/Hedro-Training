@@ -9,3 +9,11 @@ rmq-build:
 rmq-run:
 
 	cd rmq-bridge && cargo run
+
+consumer-build:
+
+	cd rmq-consumer && cargo build
+
+consumer-run:
+
+	cd rmq-consumer && cargo run

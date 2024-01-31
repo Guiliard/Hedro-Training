@@ -16,7 +16,7 @@ use log::info;
 async fn main() 
 {
 
-    dotenvy::dotenv().expect("Failure to read .env.....");
+    dotenvy::dotenv().expect("Failure to read .env....");
     env_logger::init();
 
     info!("starting aplication.....");
