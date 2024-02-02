@@ -65,27 +65,52 @@ services:
       - TIME_HUMIDITY=1000 
       - LOG_LEVEL=debug
 
-  # rmq-bridge:
+  rmq-bridge:
 
-  #   image: rmq-bridge
+    image: rmq-bridge
 
-  #   container_name: rmq-bridge
+    container_name: rmq-bridge
 
-  #   networks:
-  #     - my_conection
+    networks:
+      - my_conection
 
-  #   environment:
-  #     - RUST_LOG=debug
-  #     - MQTT_HOST=emqx:1883
-  #     - MQTT_PROTOCOL=tcp
-  #     - MQTT_PORT=1883
-  #     - MQTT_CLIENT_ID=my-client-id@1234
-  #     - MQTT_USER=admin
-  #     - MQTT_PASSWORD=admin
+    environment:
+      - RUST_LOG=debug
+      - MQTT_HOST=emqx
+      - MQTT_PROTOCOL=tcp
+      - MQTT_PORT=1883
+      - MQTT_CLIENT_ID=my-client-id@1234
+      - MQTT_USER=public
+      - MQTT_PASSWORD=public
 
-  #     - RABBITMQ_HOST=rabbitmq:5672
-  #     - RABBITMQ_PORT=5672
-  #     - RABBITMQ_USER=guest
-  #     - RABBITMQ_PASSWORD=guest
-  #     - RABBITMQ_QUEUE=Dataset
-  #     - RABBITMQ_EXCHANGE=Hedro_Test
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASSWORD=guest
+      - RABBITMQ_QUEUE=Dataset
+      - RABBITMQ_EXCHANGE=Hedro_Test
+    
+    command: ./rmq-bridge
+
+  rmq-consumer:
+
+      image: rmq-consumer
+
+      container_name: rmq-consumer
+
+      networks:
+        - my_conection
+
+      environment:
+
+      - RUST_LOG=debug
+      
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASSWORD=guest
+      - RABBITMQ_QUEUE=Dataset
+      - RABBITMQ_EXCHANGE=Hedro_Test
+      - RABBITMQ_QUEUE_CONSUMER=Dataset_consumer
+      
+      command: ./rmq-consumer

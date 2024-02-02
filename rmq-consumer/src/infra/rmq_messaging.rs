@@ -86,7 +86,7 @@ impl RMQConnection {
         );
 
         let Ok(conn) = Connection::connect(&addr, ConnectionProperties::default()).await else {
-            error!("RabbitMq connection failre....");
+            error!("RabbitMq connection failure....");
             return Err(());
         };
 

@@ -32,7 +32,7 @@ impl BridgeService for BridgeServiceImpl {
             return Err(())
         };
 
-        match self.messaging.publish("Test_Publish".into(), &serialized).await {
+        match self.messaging.publish("Hedro_Test".into(), &serialized).await {
             Ok(_) => {
                 info!("Message published!!");
                 Ok(())
