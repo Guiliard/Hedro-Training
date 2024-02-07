@@ -8,3 +8,4 @@ FROM rust:slim-bookworm
 
 WORKDIR /app
 COPY --from=build /build/.env /build/target/release/rmq-bridge /app/
+#CMD [ "./rmq-bridge" ]

@@ -9,7 +9,6 @@ services:
   emqx:
 
     image: emqx/emqx:5.3
-
     container_name: emqx
 
     networks:
@@ -32,7 +31,6 @@ services:
   rabbitmq:
 
     image: rabbitmq:management
-
     container_name: rabbitmq
 
     networks:
@@ -50,11 +48,14 @@ services:
   device_simulator:
 
     image: device_simulator
-
     container_name: device_simulator
 
     networks:
       - my_conection
+
+    depends_on:
+      - emqx
+      - rabbitmq
 
     environment:
       - MQTT_HOST=emqx:1883
@@ -68,11 +69,13 @@ services:
   rmq-bridge:
 
     image: rmq-bridge
-
     container_name: rmq-bridge
 
     networks:
       - my_conection
+
+    depends_on:
+      - device_simulator
 
     environment:
       - RUST_LOG=debug
@@ -82,7 +85,6 @@ services:
       - MQTT_CLIENT_ID=my-client-id@1234
       - MQTT_USER=public
       - MQTT_PASSWORD=public
-
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=guest
@@ -94,17 +96,18 @@ services:
 
   rmq-consumer:
 
-      image: rmq-consumer
+    image: rmq-consumer
 
-      container_name: rmq-consumer
+    container_name: rmq-consumer
 
-      networks:
-        - my_conection
+    networks:
+      - my_conection
 
-      environment:
+    depends_on:
+      - rmq-bridge
 
+    environment:
       - RUST_LOG=debug
-      
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=guest
@@ -112,5 +115,7 @@ services:
       - RABBITMQ_QUEUE=Dataset
       - RABBITMQ_EXCHANGE=Hedro_Test
       - RABBITMQ_QUEUE_CONSUMER=Dataset_consumer
-      
-      command: ./rmq-consumer
+      - AWS_DATABASE_NAME=hdr-training
+      - AWS_TABLE_NAME=rafael
+    
+    command: ./rmq-consumer

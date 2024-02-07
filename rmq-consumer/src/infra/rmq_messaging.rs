@@ -1,4 +1,6 @@
 use crate::services::message::RMQMessage;
+use crate::services::service::BridgeService;
+use crate::infra::aws_timestream::AWSConnection;
 use futures_util::StreamExt;
 use lapin::message::Delivery;
 use lapin::{
@@ -20,11 +22,11 @@ struct RMQConfigs {
     consumer_name: String,
 }
 
-pub struct RMQConnection {}
+pub struct RMQConnection { service: Box <dyn BridgeService>,}
 
 impl RMQConnection {
 
-    pub fn new() -> Self { return RMQConnection{}; }
+    pub fn new(service: Box <dyn BridgeService> ) -> Self { return RMQConnection{ service }; }
 
     fn envs(&self) -> Result <RMQConfigs, ()> {
 
@@ -192,5 +194,22 @@ impl RMQConnection {
             Ok(deserialized_msg) => { info!("Received message successfully: {:?}!", deserialized_msg); }
             Err(err) => { error!("Failed to deserialize message: {:?}....", err); }
         }
+
+        match self.service.exec(&deserialized_msg) {
+            Ok(_) => {
+                info!("Message processed successfully!");
+            }
+            Err(_) => {
+                error!("Failure to process message....");
+            }
+        }
+
+        let mut aws_msg = AWSConnection::new(deserialized_msg);
+
+        aws_msg
+            .connect()
+            .await
+            .expect("AWS connection failure....");
+        
     }
 }
