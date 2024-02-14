@@ -1,16 +1,12 @@
+use crate::infra::aws_timestream::AWSConnection;
 use crate::services::message::RMQMessage;
 use crate::services::service::BridgeService;
-use crate::infra::aws_timestream::AWSConnection;
 use futures_util::StreamExt;
 use lapin::message::Delivery;
-use lapin::{
-    options:: *,
-    types::FieldTable,
-    Channel, Connection, ConnectionProperties,
-};
+use lapin::{options::*, types::FieldTable, Channel, Connection, ConnectionProperties};
+use log::{error, info};
 use std::env;
-use log::{ error, info };
-
+use std::sync::Arc;
 
 struct RMQConfigs {
     host: String,
@@ -22,14 +18,16 @@ struct RMQConfigs {
     consumer_name: String,
 }
 
-pub struct RMQConnection { service: Box <dyn BridgeService>,}
+pub struct RMQConnection {
+    service: Box<dyn BridgeService>,
+}
 
 impl RMQConnection {
+    pub fn new(service: Box<dyn BridgeService>) -> Self {
+        return Self { service };
+    }
 
-    pub fn new(service: Box <dyn BridgeService> ) -> Self { return RMQConnection{ service }; }
-
-    fn envs(&self) -> Result <RMQConfigs, ()> {
-
+    fn envs(&self) -> Result<RMQConfigs, ()> {
         let Ok(host) = env::var("RABBITMQ_HOST") else {
             error!("Failed to read RABBIT_HOST env....");
             return Err(());
@@ -67,7 +65,7 @@ impl RMQConnection {
 
         Ok(RMQConfigs {
             host,
-            port, 
+            port,
             user,
             password,
             exchange_name,
@@ -76,8 +74,7 @@ impl RMQConnection {
         })
     }
 
-    pub async fn connect(&mut self) -> Result < (Connection,Channel), () > {
-
+    pub async fn connect(&mut self) -> Result<(Connection, Channel), ()> {
         let envs = self.envs()?;
 
         info!("Starting RabbitMq conection!!");
@@ -103,13 +100,13 @@ impl RMQConnection {
         info!("RabbitMq channel created!");
 
         let Ok(_exchange) = channel
-        .exchange_declare(
-            &envs.exchange_name,
-            lapin::ExchangeKind::Fanout,
-            ExchangeDeclareOptions::default(),
-            FieldTable::default(),
-        )
-        .await
+            .exchange_declare(
+                &envs.exchange_name,
+                lapin::ExchangeKind::Fanout,
+                ExchangeDeclareOptions::default(),
+                FieldTable::default(),
+            )
+            .await
         else {
             error!("Rabbitmq exchange failure....");
             return Err(());
@@ -156,60 +153,54 @@ impl RMQConnection {
             .expect("Failure to creat the consumer....");
 
         while let Some(consumer_product) = consumer.next().await {
+            match consumer_product {
+                Ok(consumer_product) => {
+                    let consumer_tag = consumer_product.delivery_tag;
 
-            let consumer_product = match consumer_product {
+                    // self.handler(consumer_product).await;
 
-                Ok(consumer_product) => consumer_product,
-                Err(err) => { error!("Error in consumer: {:?}....", err); continue; }
+                    if let Err(err) = channel
+                        .basic_ack(consumer_tag, BasicAckOptions::default())
+                        .await
+                    {
+                        error!("Failed to acknowledge message: {:?}....", err);
+                    } else {
+                        info!("Message acknowledgment successful!");
+                    }
+                }
+                Err(err) => {
+                    error!("Error in consumer: {:?}....", err);
+                    continue;
+                }
             };
-            
-            let consumer_tag = consumer_product.delivery_tag;
-
-            self.handler(Ok(consumer_product)).await;
-
-            if let Err(err) = channel
-                .basic_ack(consumer_tag, BasicAckOptions::default())
-                .await
-                {
-                    error!("Failed to acknowledge message: {:?}....", err);
-                } 
-                else { info!("Message acknowledgment successful!"); }
         }
 
         Ok((conn, channel))
     }
 
-    async fn handler(&self, consumer_product: Result< Delivery, lapin::Error >) {
-        
-        let data = match consumer_product {
-            Ok(data) => data,
-            Err(_) => { error!("Error receiving message from RabbitMQ...."); return; }
-        };
-
-        let msg = data.data;
-
-        let deserialized_msg: Result<RMQMessage, _> = serde_json::from_slice(&*msg);
+    async fn handler(&self, data: Delivery) {
+        let deserialized_msg: Result<RMQMessage, _> = serde_json::from_slice(&data.data);
 
         match deserialized_msg {
-            Ok(deserialized_msg) => { info!("Received message successfully: {:?}!", deserialized_msg); }
-            Err(err) => { error!("Failed to deserialize message: {:?}....", err); }
-        }
+            Ok(deserialized_msg) => {
+                info!("Received message successfully: {:?}!", deserialized_msg);
 
-        match self.service.exec(&deserialized_msg) {
-            Ok(_) => {
-                info!("Message processed successfully!");
+                match self.service.exec(&deserialized_msg).await {
+                    Ok(_) => {
+                        info!("Message processed successfully!");
+                    }
+                    Err(_) => {
+                        error!("Failure to process message....");
+                    }
+                }
+
+                let mut aws_msg = AWSConnection::new(deserialized_msg);
+
+                aws_msg.connect().await.expect("AWS connection failure....");
             }
-            Err(_) => {
-                error!("Failure to process message....");
+            Err(err) => {
+                error!("Failed to deserialize message: {:?}....", err);
             }
         }
-
-        let mut aws_msg = AWSConnection::new(deserialized_msg);
-
-        aws_msg
-            .connect()
-            .await
-            .expect("AWS connection failure....");
-        
     }
 }

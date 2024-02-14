@@ -1,9 +1,11 @@
-use log::info;
-use crate::services::service::BridgeServiceImpl;
-use crate::infra::rmq_messaging::RMQConnection;
-
 mod infra;
 mod services;
+
+use std::sync::Arc;
+
+use crate::infra::rmq_messaging::RMQConnection;
+use crate::services::service::BridgeServiceImpl;
+use log::info;
 
 #[tokio::main]
 async fn main() {
