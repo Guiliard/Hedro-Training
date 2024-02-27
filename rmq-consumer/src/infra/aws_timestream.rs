@@ -1,9 +1,11 @@
-use crate::services::message::RMQMessage;
+use crate::services::{message::RMQMessage, service::Messaging};
+use::async_trait::async_trait;
 use aws_sdk_timestreamwrite::{
     self,
     types::{Dimension, DimensionValueType, MeasureValue, MeasureValueType, Record, TimeUnit},
+    Client,
 };
-use log::{ error, info };
+use log::{error, info};
 use std::{
     env,
     error::Error,
@@ -17,15 +19,48 @@ struct AWSConfigs {
 }
 
 pub struct AWSConnection {
-    message: RMQMessage,
 }
 
-impl AWSConnection { 
-    
-    pub fn new (message: RMQMessage) -> Self { AWSConnection { message } }
+#[async_trait]
+impl Messaging for AWSConnection {
+    async fn publish(&self, record: Record) -> Result<(), ()> {
 
-    fn envs(&self) -> Result <AWSConfigs, ()> {
+        let envs = self.envs()?;
 
+        let Ok(client) = self.connect().await else {
+            error!("Failed to connect to client.");
+            return Err(())
+        };
+
+        match client
+            .write_records()
+            .set_database_name(Some(envs.database.into()))
+            .set_table_name(Some(envs.table.into()))
+            .set_records(Some(vec![record]))
+            .send()
+            .await
+        {
+            Ok(_) => {
+                info!("Inserted values in database!");
+            }
+            Err(err) => {
+                error!("Failure to insert the values in database....");
+                error!("{:?}", err);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl AWSConnection {
+    pub fn new() -> Self {
+        Self {  }
+    }
+}
+
+impl AWSConnection {
+    fn envs(&self) -> Result<AWSConfigs, ()> {
         let Ok(database) = env::var("AWS_DATABASE_NAME") else {
             error!("Failed to read AWS_DATABASE_NAME env....");
             return Err(());
@@ -36,47 +71,40 @@ impl AWSConnection {
             return Err(());
         };
 
-        Ok(AWSConfigs { 
-            database, 
-            table,
-        })
+        Ok(AWSConfigs { database, table })
     }
 
-    pub async fn connect(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        
+    pub async fn connect(&mut self) -> Result<Client, Box<dyn Error + Send + Sync>> {
         let config = aws_config::load_from_env().await;
 
-        let env = match self.envs() {
-            Ok(env) => env,
-            Err(_) => return Err("Failure to read .env....".into()),
-        };
-
-        let client = match aws_sdk_timestreamwrite::Client::new(&config)
-        .with_endpoint_discovery_enabled()
-        .await
-        {
+        let client = match Client::new(&config).with_endpoint_discovery_enabled().await {
             Ok((c, _)) => Ok(c),
             Err(err) => {
-                error!("failure to connect");
+                error!("Failure to connect....");
                 Err(err)
             }
         }?;
+
+        Ok(client)
+    }
+
+    pub async fn messaging_sendler(&self, message: RMQMessage) -> Result<(), ()> {
 
         let time_epoch = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Money is more precious than time?");
 
         let measure = MeasureValue::builder()
-            .set_name(Some(self.message.typ.to_string()))
+            .set_name(Some(message.typ.to_string()))
             .set_type(Some(MeasureValueType::Double))
-            .set_value(Some(self.message.value.to_string()))
+            .set_value(Some(message.value.to_string()))
             .build()
             .expect("Failed to create MeasureValue....");
 
         let dimension = Dimension::builder()
             .set_name(Some("Device".into()))
             .set_dimension_value_type(Some(DimensionValueType::Varchar))
-            .set_value(Some(self.message.device.to_string()))
+            .set_value(Some(message.device.to_string()))
             .build()
             .expect("Failed to create Dimension....");
 
@@ -89,22 +117,7 @@ impl AWSConnection {
             .set_dimensions(Some(vec![dimension]))
             .build();
 
-        match client
-            .write_records()
-            .set_database_name(Some(env.database.into()))
-            .set_table_name(Some(env.table.into()))
-            .set_records(Some(vec![record]))
-            .send()
-            .await
-            {
-                Ok(_) => {
-                    info!("Inserted values in database!")
-                }
-                Err(err) => {
-                    error!("Failure to insert the values in database....");
-                    error!("{:?}", err);
-                }
-            }
+        self.publish(record);
 
         Ok(())
     }

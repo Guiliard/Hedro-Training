@@ -1,11 +1,42 @@
 use crate::services::message::RMQMessage;
+use async_trait::async_trait;
+use aws_sdk_timestreamwrite::types::Record;
+use log::{debug, error, info};
 
-pub trait BridgeService {
-    async fn exec(&self, msg: &RMQMessage) -> Result<(), ()>;
+#[async_trait]
+pub trait Messaging {
+    async fn publish(&self, record: Record) -> Result<(), ()>;
 }
 
-pub struct BridgeServiceImpl {}
+#[async_trait]
+pub trait BridgeService {
+    async fn exec(&self, record: Record) -> Result<(), ()>;
+}
 
-impl BridgeServiceImpl { pub fn new() -> Self { BridgeServiceImpl {} } }
+pub struct BridgeServiceImpl {
+    messaging: Box<dyn Messaging + Sync + Send>,
+}
 
-impl BridgeService for BridgeServiceImpl { async fn exec(&self, _msg: &RMQMessage) -> Result <(), ()> { Ok(()) } }
+impl BridgeServiceImpl {
+    pub fn new(messaging: Box<dyn Messaging + Sync + Send>) -> Self {
+        BridgeServiceImpl { messaging }
+    }
+}
+
+#[async_trait]
+impl BridgeService for BridgeServiceImpl {
+    async fn exec(&self, record: Record) -> Result<(), ()> {
+        debug!("Message Received!!");
+
+        match self.messaging.publish(record).await {
+            Ok(_) => {
+                info!("Message published!!");
+                Ok(())
+            }
+            Err(_) => {
+                error!("Failured to publish message....");
+                Err(())
+            }
+        }
+    }
+}

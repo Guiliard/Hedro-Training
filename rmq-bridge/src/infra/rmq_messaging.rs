@@ -1,16 +1,15 @@
 use crate::services::service::Messaging;
 use async_trait::async_trait;
-use std::env; 
 use lapin::{
     options::{ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions},
     types::FieldTable,
     BasicProperties, Channel, Connection, ConnectionProperties,
 };
+use std::env;
 
-use log::{ error, info };
+use log::{error, info};
 
 struct RabbitMQConfigs {
-
     host: String,
     port: String,
     user: String,
@@ -22,24 +21,24 @@ struct RabbitMQConfigs {
 pub struct RabbitMQConnection {}
 
 pub struct RabbitMQMessaging {
-
     _conn: Connection,
     channel: Channel,
 }
 
 impl RabbitMQMessaging {
-
     pub fn new(conn: Connection, channel: Channel) -> Self {
-        RabbitMQMessaging { _conn: conn, channel }
+        RabbitMQMessaging {
+            _conn: conn,
+            channel,
+        }
     }
 }
 
 #[async_trait]
 impl Messaging for RabbitMQMessaging {
-
-    async fn publish (&self, destination: String, data: &[u8]) -> Result <(), ()> {
-
-        match self.channel
+    async fn publish(&self, destination: String, data: &[u8]) -> Result<(), ()> {
+        match self
+            .channel
             .basic_publish(
                 &destination,
                 "",
@@ -47,26 +46,26 @@ impl Messaging for RabbitMQMessaging {
                 data,
                 BasicProperties::default(),
             )
-            .await 
-            {
-                Ok(_) => {
-                    info!("Published to rmq!");
-                    Ok(())
-                }
-                Err(_) => {
-                    error!("Failed to publish msg to rmq....");
-                    Err(())
-                }
+            .await
+        {
+            Ok(_) => {
+                info!("Published to rmq!");
+                Ok(())
             }
+            Err(_) => {
+                error!("Failed to publish msg to rmq....");
+                Err(())
+            }
+        }
     }
 }
 
 impl RabbitMQConnection {
+    pub fn new() -> Self {
+        return RabbitMQConnection {};
+    }
 
-    pub fn new() -> Self { return  RabbitMQConnection {};}
-
-    fn envs(&self) -> Result <RabbitMQConfigs, ()> {
-
+    fn envs(&self) -> Result<RabbitMQConfigs, ()> {
         let Ok(host) = env::var("RABBITMQ_HOST") else {
             error!("Failed to read RABBIT_HOST env....");
             return Err(());
@@ -99,7 +98,7 @@ impl RabbitMQConnection {
 
         Ok(RabbitMQConfigs {
             host,
-            port, 
+            port,
             user,
             password,
             exchange_name,
@@ -107,8 +106,7 @@ impl RabbitMQConnection {
         })
     }
 
-    pub async fn connect(&mut self) -> Result < (Connection,Channel), () > {
-
+    pub async fn connect(&mut self) -> Result<(Connection, Channel), ()> {
         let envs = self.envs()?;
 
         info!("Starting RabbitMq conection!!");
@@ -134,13 +132,13 @@ impl RabbitMQConnection {
         info!("RabbitMq channel created!");
 
         let Ok(_exchange) = channel
-        .exchange_declare(
-            &envs.exchange_name,
-            lapin::ExchangeKind::Fanout,
-            ExchangeDeclareOptions::default(),
-            FieldTable::default(),
-        )
-        .await
+            .exchange_declare(
+                &envs.exchange_name,
+                lapin::ExchangeKind::Fanout,
+                ExchangeDeclareOptions::default(),
+                FieldTable::default(),
+            )
+            .await
         else {
             error!("Rabbitmq exchange failure....");
             return Err(());

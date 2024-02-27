@@ -26,7 +26,7 @@ pub struct RMQConnection { service: Box <dyn BridgeService>,}
 
 impl RMQConnection {
 
-    pub fn new(service: Box <dyn BridgeService> ) -> Self { return RMQConnection{ service }; }
+    pub fn new(service: Box <dyn BridgeService> ) -> Self { return Self { service }; }
 
     fn envs(&self) -> Result <RMQConfigs, ()> {
 
@@ -157,59 +157,57 @@ impl RMQConnection {
 
         while let Some(consumer_product) = consumer.next().await {
 
-            let consumer_product = match consumer_product {
+            match consumer_product 
+            {
+                Ok(consumer_product) => {
 
-                Ok(consumer_product) => consumer_product,
-                Err(err) => { error!("Error in consumer: {:?}....", err); continue; }
+                    let consumer_tag = consumer_product.delivery_tag;
+
+                    self.handler(consumer_product).await;
+
+                    if let Err(err) = channel
+                        .basic_ack(consumer_tag, BasicAckOptions::default())
+                        .await
+                        { error!("Failed to acknowledge message: {:?}....", err); } 
+
+                    else { info!("Message acknowledgment successful!"); }
+                }
+                Err(err) => {
+
+                    error!("Error in consumer: {:?}....", err);
+                    continue;
+                }
             };
-            
-            let consumer_tag = consumer_product.delivery_tag;
-
-            self.handler(Ok(consumer_product)).await;
-
-            if let Err(err) = channel
-                .basic_ack(consumer_tag, BasicAckOptions::default())
-                .await
-                {
-                    error!("Failed to acknowledge message: {:?}....", err);
-                } 
-                else { info!("Message acknowledgment successful!"); }
         }
 
         Ok((conn, channel))
     }
 
-    async fn handler(&self, consumer_product: Result< Delivery, lapin::Error >) {
-        
-        let data = match consumer_product {
-            Ok(data) => data,
-            Err(_) => { error!("Error receiving message from RabbitMQ...."); return; }
-        };
+    async fn handler(&self, data: Delivery) {
 
-        let msg = data.data;
+        let deserialized_msg: Result<RMQMessage, _> = serde_json::from_slice(&data.data);
 
-        let deserialized_msg: Result<RMQMessage, _> = serde_json::from_slice(&*msg);
+        match deserialized_msg 
+        {
+            Ok(deserialized_msg) => {
 
-        match deserialized_msg {
-            Ok(deserialized_msg) => { info!("Received message successfully: {:?}!", deserialized_msg); }
+                info!("Deserialized message successfully: {:?}!", deserialized_msg);
+
+                match self.service.exec(&deserialized_msg).await 
+                {
+                    Ok(_) => { info!("Message processed successfully!"); }
+
+                    Err(_) => { error!("Failure to process message...."); }
+                }
+
+                let mut aws_msg = AWSConnection::new(deserialized_msg);
+
+                aws_msg.connect().await.expect("AWS connection failure....");
+            }
+
             Err(err) => { error!("Failed to deserialize message: {:?}....", err); }
         }
-
-        match self.service.exec(&deserialized_msg) {
-            Ok(_) => {
-                info!("Message processed successfully!");
-            }
-            Err(_) => {
-                error!("Failure to process message....");
-            }
-        }
-
-        let mut aws_msg = AWSConnection::new(deserialized_msg);
-
-        aws_msg
-            .connect()
-            .await
-            .expect("AWS connection failure....");
         
     }
+
 }

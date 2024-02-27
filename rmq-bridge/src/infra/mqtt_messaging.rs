@@ -1,12 +1,11 @@
-use std::env::var;
-use paho_mqtt::{ AsyncClient, ConnectOptionsBuilder, CreateOptionsBuilder, Message };
-use log:: { error, info };
 use futures_util::StreamExt;
+use log::{error, info};
+use paho_mqtt::{AsyncClient, ConnectOptionsBuilder, CreateOptionsBuilder, Message};
+use std::env::var;
 
 use crate::services::{messages::MQTTMessage, service::BridgeService};
 
 struct MQTTConfigs {
-
     protocol: String,
     host: String,
     port: String,
@@ -15,15 +14,12 @@ struct MQTTConfigs {
     password: String,
 }
 pub struct MQTTMessaging {
-    
-    subscribes: Vec <(String, u8)>,
-    service: Box <dyn BridgeService>,
-
+    subscribes: Vec<(String, u8)>,
+    service: Box<dyn BridgeService>,
 }
 
 impl MQTTMessaging {
-
-    pub fn new (service: Box<dyn BridgeService>) -> Self {
+    pub fn new(service: Box<dyn BridgeService>) -> Self {
         MQTTMessaging {
             subscribes: vec![],
             service,
@@ -32,9 +28,7 @@ impl MQTTMessaging {
 }
 
 impl MQTTMessaging {
-
     fn envs(&self) -> Result<MQTTConfigs, ()> {
-        
         let Ok(host) = var("MQTT_HOST") else {
             error!("Failure to read the MQTT_HOST env....");
             return Err(());
@@ -66,7 +60,6 @@ impl MQTTMessaging {
         };
 
         Ok(MQTTConfigs {
-
             client_id,
             host,
             port,
@@ -74,11 +67,9 @@ impl MQTTMessaging {
             user,
             password,
         })
+    }
 
-    } 
-
-    pub async fn connect (&self) -> Result<(), ()> {
-
+    pub async fn connect(&self) -> Result<(), ()> {
         let env = self.envs()?;
 
         let configs = CreateOptionsBuilder::new()
@@ -118,9 +109,10 @@ impl MQTTMessaging {
         self.subscribes.push((topic, qos));
     }
 
-    async fn handler(&self, infos: Option <Message>) {
-
-        let Some(message) = infos else { return; };
+    async fn handler(&self, infos: Option<Message>) {
+        let Some(message) = infos else {
+            return;
+        };
 
         let payload = message.payload();
 
@@ -130,11 +122,11 @@ impl MQTTMessaging {
         };
 
         match self.service.exec(&msg).await {
-            Ok(_) => { info!("Message processed sucessfully!") }
+            Ok(_) => {
+                info!("Message processed sucessfully!")
+            }
 
             Err(_) => error!("Failed to process message...."),
         }
     }
 }
-
-   
