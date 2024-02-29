@@ -29,7 +29,7 @@ cd Hedro-Training
 
 ```
 cd device_simulator/
-docker build . -t device-simulator
+docker build . -t device_simulator
 cd ..
 ```
 
